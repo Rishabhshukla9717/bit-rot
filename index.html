@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Bit-Rot — deep technical notes on storage, Linux, SAN, networking, and failure analysis.">
+<title>Bit-Rot — Systems, Storage & Failure</title>
+<style>
+  :root{
+    --ink:#151719;
+    --muted:#697078;
+    --paper:#f5f3ed;
+    --paper-2:#ebe8df;
+    --card:#fffefb;
+    --line:#d6d1c8;
+    --accent:#e25b32;
+    --accent-dark:#a93d21;
+    --teal:#315d62;
+    --lime:#c7d96f;
+    --dark:#171a1c;
+    --dark-2:#222629;
+    --max:1240px;
+    --serif:Georgia, "Times New Roman", serif;
+    --sans:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45}
+  a{color:inherit;text-decoration:none}
+  button,input{font:inherit}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
+  .topbar{background:var(--dark);color:#f7f6f1;border-bottom:1px solid #34383b}
+  .nav{min-height:76px;display:flex;align-items:center;gap:34px}
+  .brand{display:flex;align-items:center;gap:13px;min-width:max-content}
+  .brandmark{width:30px;height:30px;position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
+  .brandmark i{display:block;background:#f7f6f1}
+  .brandmark i:nth-child(2),.brandmark i:nth-child(7),.brandmark i:nth-child(12),.brandmark i:nth-child(15){background:var(--accent)}
+  .brandname{font-size:22px;font-weight:750;letter-spacing:-.045em}
+  .brandname span{color:var(--accent)}
+  .navlinks{display:flex;align-items:center;gap:26px;font-size:14px;color:#c9cdcf}
+  .navlinks a:hover{color:#fff}
+  .navright{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .navbtn,.iconbtn{border:1px solid #454b4e;background:transparent;color:#eee;padding:10px 13px;cursor:pointer}
+  .navbtn:hover,.iconbtn:hover{border-color:#737b7f}
+  .iconbtn{width:42px;height:40px;padding:0}
+  .navbtn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+
+  .hero{border-bottom:1px solid var(--line);padding:58px 0 46px}
+  .hero-grid{display:grid;grid-template-columns:1.02fr .98fr;gap:66px;align-items:center}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-family:var(--serif);font-size:clamp(58px,7vw,100px);font-weight:500;line-height:.94;letter-spacing:-.055em;margin:14px 0 22px}
+  .lede{font-size:20px;color:#464d53;max-width:650px;line-height:1.55}
+  .hero-actions{display:flex;gap:10px;margin-top:30px;flex-wrap:wrap}
+  .btn{border:1px solid var(--ink);padding:12px 16px;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:10px}
+  .btn.filled{background:var(--ink);color:#fff}
+  .btn:hover{transform:translateY(-1px)}
+  .system-art{background:var(--dark);border:1px solid #2f3437;min-height:390px;padding:22px;color:#eaece8;position:relative;overflow:hidden}
+  .system-art:after{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 45%,rgba(255,255,255,.035),transparent 55%);pointer-events:none}
+  .art-title{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #3a3f42;padding-bottom:14px;font-family:var(--mono);font-size:12px;color:#9ca6aa}
+  .blink{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:7px;animation:pulse 1.8s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  .path{margin-top:36px;display:grid;grid-template-columns:1fr 30px 1fr 30px 1fr;align-items:center;gap:8px}
+  .node{border:1px solid #465056;background:#1e2326;padding:16px 13px;min-height:75px}
+  .node b{font-size:13px}
+  .node small{display:block;color:#90999d;margin-top:5px;font-family:var(--mono);font-size:10px}
+  .arrow{text-align:center;color:var(--accent);font-family:var(--mono)}
+  .path.second{grid-template-columns:1fr 30px 1fr 30px 1fr;margin-top:18px}
+  .latency{margin-top:26px;border-top:1px solid #3a3f42;padding-top:18px;display:flex;align-items:flex-end;gap:8px;height:90px}
+  .bar{width:11%;background:#465056;min-height:12px}
+  .bar.hot{background:var(--accent)}
+  .bar:nth-child(1){height:18%}.bar:nth-child(2){height:27%}.bar:nth-child(3){height:33%}.bar:nth-child(4){height:74%}.bar:nth-child(5){height:48%}.bar:nth-child(6){height:88%}.bar:nth-child(7){height:40%}.bar:nth-child(8){height:61%}
+  .art-note{position:absolute;right:22px;bottom:18px;font-family:var(--mono);font-size:10px;color:#899397}
+
+  .section{padding:58px 0;border-bottom:1px solid var(--line)}
+  .section-head{display:flex;align-items:end;justify-content:space-between;gap:30px;margin-bottom:26px}
+  .section-head h2{font-family:var(--serif);font-size:42px;font-weight:500;letter-spacing:-.04em;margin:0}
+  .section-head p{max-width:540px;color:var(--muted);margin:0}
+  .pillrow{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 4px}
+  .pill{border:1px solid var(--line);background:transparent;padding:8px 12px;font-size:13px;color:#555d63;cursor:pointer}
+  .pill.active,.pill:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .feature-grid{display:grid;grid-template-columns:1.45fr .75fr;gap:22px}
+  .feature{background:var(--card);border:1px solid var(--line);display:grid;grid-template-columns:1.1fr .9fr;min-height:420px}
+  .feature-copy{padding:34px;display:flex;flex-direction:column}
+  .label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent);font-weight:700}
+  .feature h3{font-family:var(--serif);font-size:42px;line-height:1.05;font-weight:500;letter-spacing:-.035em;margin:18px 0}
+  .feature p{color:#5a6268;line-height:1.6}
+  .meta{font-size:12px;color:#777f85;margin-top:auto;padding-top:25px}
+  .feature-visual{background:#dfe5dd;display:flex;align-items:center;justify-content:center;padding:28px;position:relative;overflow:hidden}
+  .diskstack{width:84%;max-width:280px}
+  .disk{height:50px;border:2px solid var(--ink);background:#f8f7f1;margin-top:-2px;display:flex;align-items:center;padding:0 14px;justify-content:space-between}
+  .disk:first-child{background:var(--accent);color:#fff}
+  .disk .lights{display:flex;gap:4px}
+  .disk .lights i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.55}
+  .sidecards{display:grid;gap:22px}
+  .story{background:var(--card);border:1px solid var(--line);padding:25px;min-height:199px;display:flex;flex-direction:column}
+  .story h3{font-family:var(--serif);font-size:27px;line-height:1.08;font-weight:500;letter-spacing:-.02em;margin:14px 0}
+  .story .meta{margin-top:auto}
+
+  .posts{display:grid;grid-template-columns:1fr 1fr;column-gap:46px}
+  .post{display:grid;grid-template-columns:104px 1fr;gap:22px;padding:25px 0;border-top:1px solid var(--line)}
+  .date{font-family:var(--mono);font-size:11px;color:#7b8287;padding-top:3px}
+  .post h3{font-family:var(--serif);font-size:26px;line-height:1.12;font-weight:500;letter-spacing:-.025em;margin:0 0 8px}
+  .post p{margin:0;color:var(--muted);font-size:14px;line-height:1.55}
+  .post:hover h3{color:var(--accent-dark)}
+  .hidden{display:none!important}
+
+  .rfd{background:var(--dark);color:#eee}
+  .rfd .section-head h2{color:#fff}
+  .rfd .section-head p{color:#aab1b4}
+  .notesgrid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #3b4144;border-left:1px solid #3b4144}
+  .note{min-height:230px;padding:24px;border-right:1px solid #3b4144;border-bottom:1px solid #3b4144;display:flex;flex-direction:column}
+  .note .num{font-family:var(--mono);color:var(--accent);font-size:11px}
+  .note h3{font-family:var(--serif);font-size:24px;line-height:1.1;font-weight:500;margin:36px 0 12px}
+  .note p{color:#9ba3a7;font-size:13px;line-height:1.55;margin:0}
+  .note .status{margin-top:auto;padding-top:18px;font-size:11px;font-family:var(--mono);color:#d4d8da}
+  .note:hover{background:var(--dark-2)}
+
+  .paths{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .pathcard{background:var(--card);border:1px solid var(--line);padding:24px;min-height:235px;position:relative}
+  .pathcard .count{font-family:var(--mono);font-size:10px;color:#81888d}
+  .pathcard h3{font-family:var(--serif);font-size:28px;font-weight:500;margin:30px 0 12px}
+  .pathcard p{font-size:13px;color:var(--muted);line-height:1.55}
+  .pathcard:after{content:"→";position:absolute;right:20px;bottom:18px;color:var(--accent);font-size:22px}
+
+  .newsletter{display:grid;grid-template-columns:1fr .9fr;gap:70px;align-items:center}
+  .newsletter h2{font-family:var(--serif);font-size:46px;font-weight:500;line-height:1.04;letter-spacing:-.04em;margin:0 0 10px}
+  .newsletter p{color:var(--muted)}
+  .signup{display:flex}
+  .signup input{width:100%;padding:14px;border:1px solid var(--line);background:#fffefb;outline:none}
+  .signup button{border:1px solid var(--ink);background:var(--ink);color:#fff;padding:0 20px;font-weight:700}
+  footer{background:#0f1112;color:#b5babc;padding:44px 0}
+  .foot{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:35px}
+  .foot h4{color:#fff;font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 15px}
+  .foot a{display:block;font-size:13px;margin:9px 0;color:#aeb4b7}
+  .foot a:hover{color:#fff}
+  .footbrand p{max-width:340px;font-size:13px;line-height:1.65}
+
+  body.dark{
+    --ink:#f2f1eb;--muted:#a7adb1;--paper:#151819;--paper-2:#1b1f20;--card:#1d2122;--line:#353a3c;
+  }
+  body.dark .topbar{background:#0c0e0f}
+  body.dark .lede{color:#c3c8ca}
+  body.dark .feature-visual{background:#293234}
+  body.dark .disk{background:#222729;border-color:#d9dcdd}
+  body.dark .feature p{color:#afb6b9}
+  body.dark .pill{color:#b6bdc0}
+  body.dark .pill.active,body.dark .pill:hover{background:#ecebe5;color:#111;border-color:#ecebe5}
+  body.dark .signup input{background:#1d2122;color:#fff}
+  body.dark .signup button{background:#eee;color:#111;border-color:#eee}
+
+  @media(max-width:1000px){
+    .hero-grid,.feature-grid,.newsletter{grid-template-columns:1fr}
+    .feature{grid-template-columns:1fr 1fr}
+    .notesgrid,.paths{grid-template-columns:repeat(2,1fr)}
+    .posts{grid-template-columns:1fr}
+  }
+  @media(max-width:720px){
+    .wrap{padding:0 19px}
+    .navlinks,.navbtn.accent{display:none}
+    .nav{gap:18px}
+    .hero{padding-top:42px}
+    h1{font-size:60px}
+    .feature{grid-template-columns:1fr}
+    .feature-visual{min-height:270px}
+    .post{grid-template-columns:78px 1fr}
+    .notesgrid,.paths{grid-template-columns:1fr}
+    .foot{grid-template-columns:1fr 1fr}
+    .system-art{min-height:360px}
+    .path,.path.second{grid-template-columns:1fr;gap:6px}
+    .arrow{transform:rotate(90deg)}
+    .system-art{overflow:auto}
+    .latency,.art-note{display:none}
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap nav">
+    <a class="brand" href="#">
+      <span class="brandmark" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </span>
+      <span class="brandname">bit<span>-</span>rot</span>
+    </a>
+    <nav class="navlinks" aria-label="Primary">
+      <a href="#latest">Articles</a>
+      <a href="#notes">Engineering Notes</a>
+      <a href="#paths">Topics</a>
+      <a href="#about">About</a>
+    </nav>
+    <div class="navright">
+      <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
+      <button class="navbtn" id="searchBtn">Search /</button>
+      <a class="navbtn accent" href="#subscribe">Subscribe</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <div class="kicker">Storage · Linux · Networking · Failure Analysis</div>
+        <h1>Look beneath the abstraction.</h1>
+        <p class="lede">Bit-Rot is a technical publication about the systems underneath modern infrastructure — how data moves, where it waits, how it fails, and how to reason about it when the dashboard lies.</p>
+        <div class="hero-actions">
+          <a class="btn filled" href="#latest">Read the latest →</a>
+          <a class="btn" href="#paths">Start from first principles</a>
+        </div>
+      </div>
+
+      <div class="system-art" aria-label="Illustrative storage I/O path diagram">
+        <div class="art-title">
+          <span><span class="blink"></span>I/O PATH / LIVE MODEL</span>
+          <span>latency: 4.81 ms</span>
+        </div>
+        <div class="path">
+          <div class="node"><b>Application</b><small>write(2)</small></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>Linux</b><small>VFS / FS / blk-mq</small></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>SCSI</b><small>CDB / queue</small></div>
+        </div>
+        <div class="path second">
+          <div class="node"><b>Initiator</b><small>iSCSI / FC</small></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>Fabric</b><small>paths / ALUA</small></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>Array</b><small>cache / media</small></div>
+        </div>
+        <div class="latency">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar hot"></div>
+          <div class="bar"></div><div class="bar hot"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+        <div class="art-note">observe → isolate → explain → verify</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="latest">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <div class="kicker">Featured</div>
+          <h2>What we're breaking down</h2>
+        </div>
+        <p>Long-form explainers and lab-backed analysis. The goal is a durable mental model, not a command copied from a forum.</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="label">Deep Dive · Linux I/O</span>
+            <h3>What actually happens after write()?</h3>
+            <p>A guided trip from userspace to persistent media: page cache, filesystem, BIOs, blk-mq, SCSI queues and the device below it all.</p>
+            <div class="meta">18 min read · Architecture · Updated Sep 2026</div>
+          </div>
+          <div class="feature-visual">
+            <div class="diskstack" aria-hidden="true">
+              <div class="disk"><b>PAGE CACHE</b><span class="lights"><i></i><i></i><i></i></span></div>
+              <div class="disk"><b>FILESYSTEM</b><span class="lights"><i></i><i></i><i></i></span></div>
+              <div class="disk"><b>BLK-MQ</b><span class="lights"><i></i><i></i><i></i></span></div>
+              <div class="disk"><b>SCSI</b><span class="lights"><i></i><i></i><i></i></span></div>
+              <div class="disk"><b>MEDIA</b><span class="lights"><i></i><i></i><i></i></span></div>
+            </div>
+          </div>
+        </article>
+
+        <div class="sidecards">
+          <article class="story">
+            <span class="label">Failure Analysis</span>
+            <h3>The path is up. So why is I/O frozen?</h3>
+            <p style="color:var(--muted);font-size:13px">ALUA state, path selection and the difference between reachable and usable.</p>
+            <div class="meta">12 min · SAN</div>
+          </article>
+          <article class="story">
+            <span class="label">First Principles</span>
+            <h3>SCSI isn't a cable.</h3>
+            <p style="color:var(--muted);font-size:13px">The command model hiding underneath iSCSI, FC, SAS and much of enterprise storage.</p>
+            <div class="meta">14 min · Protocols</div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <div class="kicker">Latest</div>
+          <h2>All articles</h2>
+        </div>
+        <p>Technical deep dives, experiments, postmortems and field notes from the storage stack.</p>
+      </div>
+
+      <div class="pillrow" id="filters">
+        <button class="pill active" data-filter="all">All</button>
+        <button class="pill" data-filter="linux">Linux</button>
+        <button class="pill" data-filter="san">SAN</button>
+        <button class="pill" data-filter="storage">Storage</button>
+        <button class="pill" data-filter="failure">Failure Analysis</button>
+      </div>
+
+      <div class="posts" id="postList">
+        <article class="post" data-category="linux">
+          <div class="date">SEP 08<br>2026</div>
+          <div><h3>blk-mq without the mythology</h3><p>Hardware queues, software queues, tags and what your storage device actually sees.</p></div>
+        </article>
+        <article class="post" data-category="san">
+          <div class="date">SEP 04<br>2026</div>
+          <div><h3>ALUA: optimized is a policy, not a compliment</h3><p>How asymmetric access works and why your multipath output looks the way it does.</p></div>
+        </article>
+        <article class="post" data-category="failure">
+          <div class="date">AUG 29<br>2026</div>
+          <div><h3>RAID rebuilt successfully. The data was still gone.</h3><p>Understanding the boundaries between redundancy, integrity and recoverability.</p></div>
+        </article>
+        <article class="post" data-category="storage">
+          <div class="date">AUG 24<br>2026</div>
+          <div><h3>What ONTAP really means by an aggregate</h3><p>Physical disks, RAID groups, WAFL and the abstractions you need before troubleshooting capacity.</p></div>
+        </article>
+        <article class="post" data-category="san">
+          <div class="date">AUG 17<br>2026</div>
+          <div><h3>iSCSI login succeeded. Now the interesting part starts.</h3><p>Discovery, sessions, connections, LUN presentation and where Linux maps the pieces.</p></div>
+        </article>
+        <article class="post" data-category="linux">
+          <div class="date">AUG 11<br>2026</div>
+          <div><h3>When high iowait does — and doesn't — mean slow storage</h3><p>A practical interpretation of CPU wait time, runnable work and blocked tasks.</p></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section rfd" id="notes">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <div class="kicker">Engineering Notes</div>
+          <h2>Working knowledge, in public</h2>
+        </div>
+        <p>Shorter design notes, experiments and technical questions. Think lab notebook rather than polished article.</p>
+      </div>
+
+      <div class="notesgrid">
+        <article class="note"><span class="num">BRN-014</span><h3>Queue depth versus outstanding I/O</h3><p>A terminology cleanup before the performance series.</p><span class="status">STATUS / ACTIVE</span></article>
+        <article class="note"><span class="num">BRN-013</span><h3>Mapping a Linux LUN end to end</h3><p>From /dev/mapper back through dm-multipath to SCSI and the target.</p><span class="status">STATUS / REVIEW</span></article>
+        <article class="note"><span class="num">BRN-012</span><h3>Why path failure detection takes time</h3><p>Timers, retries, transport behavior and operational trade-offs.</p><span class="status">STATUS / DRAFT</span></article>
+        <article class="note"><span class="num">BRN-011</span><h3>How I benchmark storage without lying to myself</h3><p>Cache effects, workload definition and why one fio number proves very little.</p><span class="status">STATUS / ACTIVE</span></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="paths">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <div class="kicker">Start here</div>
+          <h2>Explore the stack</h2>
+        </div>
+        <p>Browse by system layer instead of publication date. Each path can become a structured knowledge map over time.</p>
+      </div>
+      <div class="paths">
+        <article class="pathcard"><span class="count">12 ARTICLES</span><h3>Linux I/O</h3><p>VFS, page cache, filesystems, BIO, blk-mq, device mapper, memory and observability.</p></article>
+        <article class="pathcard"><span class="count">09 ARTICLES</span><h3>SAN</h3><p>SCSI, iSCSI, Fibre Channel, MPIO, ALUA, target behavior and path troubleshooting.</p></article>
+        <article class="pathcard"><span class="count">11 ARTICLES</span><h3>Storage</h3><p>RAID, ONTAP, ZFS, Btrfs, snapshots, caching, data protection and recovery.</p></article>
+        <article class="pathcard"><span class="count">07 ARTICLES</span><h3>Failure</h3><p>Latency, corruption, split-brain assumptions, recovery mistakes and postmortem thinking.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="about">
+    <div class="wrap newsletter">
+      <div>
+        <div class="kicker">Why Bit-Rot</div>
+        <h2>Infrastructure is easier when the abstractions stop being magic.</h2>
+        <p>Bit-Rot exists to explain storage and systems from the inside out: architecture first, evidence second, commands last.</p>
+      </div>
+      <div id="subscribe">
+        <div class="label" style="margin-bottom:10px">One useful note, occasionally.</div>
+        <form class="signup" onsubmit="event.preventDefault(); document.getElementById('signupMsg').textContent='Prototype only — subscription not connected yet.';">
+          <input type="email" placeholder="you@example.com" aria-label="Email address" required>
+          <button type="submit">Subscribe</button>
+        </form>
+        <p id="signupMsg" style="font-size:12px;margin-top:9px"></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div class="footbrand">
+      <a class="brand" href="#">
+        <span class="brandmark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </span>
+        <span class="brandname">bit<span>-</span>rot</span>
+      </a>
+      <p>Deep technical notes on storage, Linux, networking and the failure modes between them.</p>
+    </div>
+    <div><h4>Read</h4><a href="#latest">Latest</a><a href="#notes">Engineering Notes</a><a href="#paths">Learning Paths</a></div>
+    <div><h4>Topics</h4><a href="#">Linux</a><a href="#">SAN</a><a href="#">Storage</a><a href="#">Failure Analysis</a></div>
+    <div><h4>Elsewhere</h4><a href="#">YouTube</a><a href="#">GitHub</a><a href="#">RSS</a></div>
+  </div>
+</footer>
+
+<div id="searchOverlay" style="display:none;position:fixed;inset:0;background:rgba(10,12,13,.92);z-index:99;padding:10vh 20px">
+  <div style="max-width:760px;margin:auto">
+    <button id="closeSearch" style="float:right;border:0;background:none;color:#fff;font-size:28px;cursor:pointer">×</button>
+    <div style="font-family:var(--mono);color:#aab0b3;font-size:12px;margin-bottom:14px">SEARCH BIT-ROT</div>
+    <input id="searchInput" autofocus placeholder="Try “ALUA”, “SCSI”, “Linux I/O”…" style="width:100%;background:transparent;border:0;border-bottom:2px solid #7b8387;color:#fff;font-size:32px;padding:12px 0;outline:none">
+    <div id="searchResults" style="color:#c7ccce;margin-top:24px;line-height:2"></div>
+  </div>
+</div>
+
+<script>
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => document.body.classList.toggle('dark'));
+
+document.querySelectorAll('.pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const f = btn.dataset.filter;
+    document.querySelectorAll('.post').forEach(p=>{
+      p.classList.toggle('hidden', !(f==='all' || p.dataset.category===f));
+    });
+  });
+});
+
+const overlay = document.getElementById('searchOverlay');
+const input = document.getElementById('searchInput');
+const results = document.getElementById('searchResults');
+document.getElementById('searchBtn').addEventListener('click', ()=>{
+  overlay.style.display='block'; setTimeout(()=>input.focus(),50);
+});
+document.getElementById('closeSearch').addEventListener('click', ()=> overlay.style.display='none');
+overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.style.display='none'; });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') overlay.style.display='none'; });
+
+const articles = [
+  'What actually happens after write()?',
+  'blk-mq without the mythology',
+  'ALUA: optimized is a policy, not a compliment',
+  'RAID rebuilt successfully. The data was still gone.',
+  'What ONTAP really means by an aggregate',
+  'iSCSI login succeeded. Now the interesting part starts.',
+  'When high iowait does — and doesn’t — mean slow storage',
+  'SCSI isn’t a cable.'
+];
+input.addEventListener('input', ()=>{
+  const q=input.value.trim().toLowerCase();
+  if(!q){results.innerHTML='';return;}
+  const hits=articles.filter(a=>a.toLowerCase().includes(q));
+  results.innerHTML=hits.length?hits.map(x=>`<div style="border-bottom:1px solid #3e4548;padding:10px 0">${x} <span style="color:#e25b32">→</span></div>`).join(''):'<div>No prototype articles match.</div>';
+});
+</script>
+</body>
+</html>
